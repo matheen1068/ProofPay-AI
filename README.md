@@ -5,7 +5,7 @@
 > **Sandbox only.** All PayPal money is test money. Monitoring evidence is **synthetic**, not independently verified. This demo is not a production financial or SLA adjudication service.
 
 ## The demonstration
-A customer buys a **$200** managed service with a **99.9%** uptime guarantee for November 2026. Synthetic incidents yield **120 eligible downtime minutes** in a 43,200-minute month, resulting in **99.7222% uptime**. The documented demo contract assigns a **10% ($20)** credit for this tier. A genuine AI model produces an evidence-citing summary; the operator approves a real partial refund of the captured PayPal sandbox payment.
+A customer buys a **$200** managed service with a **99.9%** uptime guarantee for the completed September 2026 synthetic scenario. Synthetic incidents yield **120 eligible downtime minutes** in a 43,200-minute month, resulting in **99.7222% uptime**. The documented demo contract assigns a **10% ($20)** credit for this tier. A genuine AI model produces an evidence-citing summary; the operator approves a real partial refund of the captured PayPal sandbox payment.
 
 ### Why it is distinct
 - Ties an SLA to actual PayPal transaction provenance, not a generic invoice.
@@ -27,7 +27,7 @@ set -a; source .env; set +a
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://localhost:8000. Enter the `ADMIN_TOKEN` in the Operator access field, run the AI investigation, create PayPal checkout, approve using a Personal sandbox account, let the return callback capture the payment, then click **Approve PayPal refund**. Verify the refund ID in PayPal sandbox merchant activity.
+Open http://localhost:8000. Enter the `ADMIN_TOKEN` in the Operator access field, create PayPal checkout, approve using a Personal sandbox account, let the return callback capture the payment, run the AI investigation for that capture, then click **Approve PayPal refund**. Verify the refund ID in PayPal sandbox merchant activity.
 
 `PUBLIC_BASE_URL` must be a secure HTTPS URL for a public deployment, or `http://localhost:8000` for local testing. The `ADMIN_TOKEN` is a demo operator token: do not expose it to public users. Never share the sandbox Client Secret or OpenAI key in frontend code.
 
@@ -56,3 +56,10 @@ Include this public repository and MIT license, an operational demo or precise s
 
 ## License
 MIT — see [LICENSE](LICENSE).
+
+
+## Staged v0.2.1 hardening
+
+The `hardening/v0.2-staged` branch binds each AI review to a capture and evidence fingerprint, checks PayPal capture status before a refund, and preserves historical records while excluding them from the new scenario. Use this branch for staging.
+
+See [isolated judge access and rollback](docs/JUDGE_ACCESS.md). Judge access requires a separate deployment, persistent storage and isolated sandbox credentials. Judge mode defaults to disabled. Automated provider mocks validate application behavior. Hosted v0.2.1 financial tests remain pending.
