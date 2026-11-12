@@ -30,7 +30,7 @@ BASE = pathlib.Path(__file__).resolve().parent
 SANDBOX = "https://api-m.sandbox.paypal.com"
 SCENARIO_ID = "proofpay-managed-cloud-2026-09-v2"
 CONTRACT_ID = "DEMO-CLOUD-SLA-2026-09"
-app = FastAPI(title="ProofPay Guarantee", version="0.2.0")
+app = FastAPI(title="ProofPay Guarantee", version="0.2.1")
 lock = threading.RLock()
 
 
@@ -97,7 +97,7 @@ def conn():
     # Non-destructive migration: preserve completed v0.1 sandbox transactions.
     # Historic rows have NULL scope and can NEVER satisfy the v0.2 refund gate.
     additions = {
-        "payments": {"scenario_id": "TEXT", "evidence_hash": "TEXT"},
+        "payments": {"scenario_id": "TEXT", "evidence_hash": "TEXT", "operator_role": "TEXT"},
         "investigations": {"capture_id": "TEXT", "scenario_id": "TEXT", "evidence_hash": "TEXT"},
         "refunds": {"scenario_id": "TEXT", "evidence_hash": "TEXT", "investigation_id": "INTEGER"},
     }
@@ -106,6 +106,8 @@ def conn():
         for column, column_type in columns.items():
             if column not in known:
                 db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {column_type}")
+    db.execute("""CREATE TABLE IF NOT EXISTS judge_usage (
+        action TEXT PRIMARY KEY, attempts INTEGER NOT NULL)""")
     db.commit()
     return db
 
@@ -125,12 +127,42 @@ def record(db, kind, detail):
                (kind, json.dumps(detail, sort_keys=True), iso_now()))
 
 
-def auth(token):
+def auth(token, action=None):
     expected = os.getenv("ADMIN_TOKEN", "")
     if len(expected) < 20:
         raise HTTPException(503, "ADMIN_TOKEN must be configured with 20+ characters")
-    if not token or not secrets.compare_digest(token.removeprefix("Bearer ").strip(), expected):
+    supplied = (token or "").removeprefix("Bearer ").strip()
+    if supplied and secrets.compare_digest(supplied, expected):
+        return "admin"
+    judge = os.getenv("JUDGE_TOKEN", "")
+    if (os.getenv("JUDGE_MODE", "false").lower() != "true"
+            or len(judge) < 20 or judge == expected
+            or not supplied or not secrets.compare_digest(supplied, judge)):
         raise HTTPException(401, "Invalid operator token")
+    if datetime.now(timezone.utc) >= datetime(2026, 12, 16, tzinfo=timezone.utc):
+        raise HTTPException(403, "Judge access has expired")
+    if os.getenv("PAYPAL_BASE_URL", SANDBOX) != SANDBOX:
+        raise HTTPException(503, "Judge access requires PayPal sandbox")
+    limits = {"checkout": 5, "investigate": 20, "refund": 5}
+    if action not in limits:
+        raise HTTPException(403, "Action unavailable to judges")
+    # Reserve attempts before external calls, across processes and restarts.
+    # Failed attempts also consume quota so repeated failures cannot bypass limits.
+    with db_session() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("INSERT OR IGNORE INTO judge_usage(action, attempts) VALUES(?,0)", (action,))
+        changed = db.execute("UPDATE judge_usage SET attempts=attempts+1 WHERE action=? AND attempts<?",
+                             (action, limits[action])).rowcount
+        if not changed:
+            raise HTTPException(429, "Judge testing limit reached; contact the project owner")
+    return "judge"
+
+
+def authorize_capture(db, capture_id, role):
+    payment = scoped_payment(db, capture_id)
+    if role == "judge" and payment["operator_role"] != "judge":
+        raise HTTPException(403, "Judge access is limited to judge-created payments")
+    return payment
 
 
 def configured():
@@ -246,12 +278,12 @@ def scoped_payment(db, capture_id):
 
 @app.post("/api/investigate")
 async def investigate(payload: Inquiry, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    role = auth(authorization, "investigate")
     key = os.getenv("OPENAI_API_KEY", "")
     if not key:
         raise HTTPException(503, "OPENAI_API_KEY not configured; no simulated AI output")
     with lock, db_session() as db:
-        payment = scoped_payment(db, payload.capture_id)
+        payment = authorize_capture(db, payload.capture_id, role)
         if db.execute("SELECT 1 FROM refunds WHERE capture_id=?", (payload.capture_id,)).fetchone():
             raise HTTPException(409, "Refund already initiated; cannot re-review for payment")
     facts = calculate()
@@ -294,7 +326,7 @@ async def investigate(payload: Inquiry, authorization: str | None = Header(defau
         "capture_id": payload.capture_id, "evidence_hash": evidence_hash(),
     }
     with lock, db_session() as db:
-        scoped_payment(db, payload.capture_id)
+        authorize_capture(db, payload.capture_id, role)
         if db.execute("SELECT 1 FROM refunds WHERE capture_id=?", (payload.capture_id,)).fetchone():
             raise HTTPException(409, "Refund initiated during investigation; review discarded")
         cur = db.execute("""INSERT INTO investigations(result,created_at,capture_id,scenario_id,evidence_hash)
@@ -309,7 +341,7 @@ async def investigate(payload: Inquiry, authorization: str | None = Header(defau
 
 @app.post("/api/checkout")
 async def checkout(authorization: str | None = Header(default=None)):
-    auth(authorization)
+    role = auth(authorization, "checkout")
     base = public_url()
     order = await paypal("POST", "/v2/checkout/orders", {
         "intent": "CAPTURE",
@@ -334,8 +366,8 @@ async def checkout(authorization: str | None = Header(default=None)):
     if parsed.scheme != "https" or parsed.hostname not in ("www.sandbox.paypal.com", "sandbox.paypal.com"):
         raise HTTPException(502, "Unexpected PayPal approval destination")
     with lock, db_session() as db:
-        db.execute("""INSERT INTO payments(order_id,state,amount_cents,scenario_id,evidence_hash)
-                     VALUES(?,?,?,?,?)""", (order["id"], "CREATED", 20000, SCENARIO_ID, evidence_hash()))
+        db.execute("""INSERT INTO payments(order_id,state,amount_cents,scenario_id,evidence_hash,operator_role)
+                     VALUES(?,?,?,?,?,?)""", (order["id"], "CREATED", 20000, SCENARIO_ID, evidence_hash(), role))
         record(db, "ORDER_CREATED", {"order_id": order["id"], "amount": "200.00 USD",
                                      "scenario_id": SCENARIO_ID, "evidence_hash": evidence_hash()})
         db.commit()
@@ -354,7 +386,9 @@ async def checkout_return(token: str = ""):
             return RedirectResponse("/?payment=success")
         if payment["state"] != "CREATED":
             return RedirectResponse("/?payment=review")
-        db.execute("UPDATE payments SET state='CAPTURING' WHERE order_id=?", (token,))
+        changed = db.execute("UPDATE payments SET state='CAPTURING' WHERE order_id=? AND state='CREATED'", (token,)).rowcount
+        if not changed:
+            return RedirectResponse("/?payment=review")
         db.commit()
     try:
         result = await paypal("POST", f"/v2/checkout/orders/{token}/capture", {},
@@ -386,14 +420,14 @@ async def checkout_return(token: str = ""):
 
 @app.post("/api/refund")
 async def refund(payload: RefundApproval, authorization: str | None = Header(default=None)):
-    auth(authorization)
+    role = auth(authorization, "refund")
     assessment = calculate()
     if assessment["refund_cents"] <= 0:
         raise HTTPException(409, "No contractual refund owed")
     if payload.evidence_hash != evidence_hash():
         raise HTTPException(409, "Submitted evidence fingerprint is stale")
     with lock, db_session() as db:
-        payment = scoped_payment(db, payload.capture_id)
+        payment = authorize_capture(db, payload.capture_id, role)
         review = db.execute("""SELECT * FROM investigations WHERE id=? AND capture_id=?
             AND scenario_id=? AND evidence_hash=?""",
             (payload.investigation_id, payload.capture_id, SCENARIO_ID, evidence_hash())).fetchone()
@@ -414,7 +448,7 @@ async def refund(payload: RefundApproval, authorization: str | None = Header(def
         raise HTTPException(409, "PayPal capture status/amount mismatch; reconciliation required")
     with lock, db_session() as db:
         # Repeat all preconditions after the network await to avoid TOCTOU reuse.
-        scoped_payment(db, payload.capture_id)
+        authorize_capture(db, payload.capture_id, role)
         if not db.execute("""SELECT 1 FROM investigations WHERE id=? AND capture_id=?
             AND scenario_id=? AND evidence_hash=?""",
             (payload.investigation_id, payload.capture_id, SCENARIO_ID, evidence_hash())).fetchone():
