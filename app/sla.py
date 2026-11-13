@@ -2,14 +2,14 @@
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
-PERIOD_START = '2026-11-01T00:00:00Z'
-PERIOD_END = '2026-12-01T00:00:00Z'
+PERIOD_START = '2026-09-01T00:00:00Z'
+PERIOD_END = '2026-10-01T00:00:00Z'
 EVENTS = [
-    {'id':'INC-101', 'start':'2026-11-07T09:00:00Z','end':'2026-11-07T10:30:00Z', 'detail':'API gateway 5xx incident; synthetic monitoring evidence'},
-    {'id':'INC-102', 'start':'2026-11-18T18:00:00Z','end':'2026-11-18T18:30:00Z', 'detail':'Database connection saturation; synthetic monitoring evidence'},
-    {'id':'INC-103', 'start':'2026-11-22T02:00:00Z','end':'2026-11-22T02:45:00Z', 'detail':'Planned maintenance, explicitly excluded by SLA'},
+    {'id':'INC-101', 'start':'2026-09-07T09:00:00Z','end':'2026-09-07T10:30:00Z', 'detail':'API gateway 5xx incident; synthetic monitoring evidence'},
+    {'id':'INC-102', 'start':'2026-09-18T18:00:00Z','end':'2026-09-18T18:30:00Z', 'detail':'Database connection saturation; synthetic monitoring evidence'},
+    {'id':'INC-103', 'start':'2026-09-22T02:00:00Z','end':'2026-09-22T02:45:00Z', 'detail':'Planned maintenance, explicitly excluded by SLA'},
 ]
-EXCLUSIONS = [{'id':'MAINT-103','start':'2026-11-22T02:00:00Z','end':'2026-11-22T02:45:00Z'}]
+EXCLUSIONS = [{'id':'MAINT-103','start':'2026-09-22T02:00:00Z','end':'2026-09-22T02:45:00Z'}]
 
 def parse_utc(s):
     d=datetime.fromisoformat(s.replace('Z','+00:00'))

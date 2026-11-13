@@ -4,7 +4,7 @@ from app.main import app
 def test_no_secret_means_admin_actions_fail(monkeypatch,tmp_path):
     monkeypatch.delenv('ADMIN_TOKEN',raising=False)
     client=TestClient(app)
-    assert client.post('/api/refund').status_code==503
+    assert client.post('/api/refund',json={'capture_id':'capture','review_id':1,'evidence_digest':'digest','amount_cents':2000}).status_code==503
 
 def test_incorrect_token_rejected(monkeypatch):
     monkeypatch.setenv('ADMIN_TOKEN','some-very-long-secret-token')

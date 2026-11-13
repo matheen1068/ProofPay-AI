@@ -5,7 +5,7 @@
 > **Sandbox only.** All PayPal money is test money. Monitoring evidence is **synthetic**, not independently verified. This demo is not a production financial or SLA adjudication service.
 
 ## The demonstration
-A customer buys a **$200** managed service with a **99.9%** uptime guarantee for November 2026. Synthetic incidents yield **120 eligible downtime minutes** in a 43,200-minute month, resulting in **99.7222% uptime**. The documented demo contract assigns a **10% ($20)** credit for this tier. A genuine AI model produces an evidence-citing summary; the operator approves a real partial refund of the captured PayPal sandbox payment.
+A customer buys a **$200** managed service with a **99.9%** uptime guarantee for the completed September 2026 synthetic fixture. Synthetic incidents yield **120 eligible downtime minutes** in a 43,200-minute month, resulting in **99.7222% uptime**. The documented demo contract assigns a **10% ($20)** credit for this tier. A genuine AI model produces an evidence-citing summary; the operator approves a real partial refund of the captured PayPal sandbox payment.
 
 ### Why it is distinct
 - Ties an SLA to actual PayPal transaction provenance, not a generic invoice.
@@ -27,7 +27,7 @@ set -a; source .env; set +a
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://localhost:8000. Enter the `ADMIN_TOKEN` in the Operator access field, run the AI investigation, create PayPal checkout, approve using a Personal sandbox account, let the return callback capture the payment, then click **Approve PayPal refund**. Verify the refund ID in PayPal sandbox merchant activity.
+Open http://localhost:8000. Enter the `ADMIN_TOKEN` in the Operator access field, create PayPal checkout, approve using a Personal sandbox account, let the return callback capture the payment, re-enter your operator token, run the AI investigation for that capture, then click **Approve PayPal refund** and confirm the displayed capture and amount. Verify the refund ID in PayPal sandbox merchant activity.
 
 `PUBLIC_BASE_URL` must be a secure HTTPS URL for a public deployment, or `http://localhost:8000` for local testing. The `ADMIN_TOKEN` is a demo operator token: do not expose it to public users. Never share the sandbox Client Secret or OpenAI key in frontend code.
 
@@ -44,12 +44,13 @@ pytest -q
 - Safeguards: explicit buyer approval, server-side capture validation, integer-cent policy calculations, merchant authorization, stable request IDs and duplicate refund lockout.
 
 ## Documentation
+- [Judge walkthrough and Render deployment](docs/JUDGE_AND_DEPLOYMENT.md)
 - [Architecture and boundaries](docs/ARCHITECTURE.md)
 - [Acceptance tests](docs/ACCEPTANCE_TESTS.md)
 - [Demo video outline](docs/DEMO_SCRIPT.md)
 
 ## Important limitations
-The app has no live-payment mode, no independent monitoring source verification, no webhook reconciliation service, no multi-tenant auth, and no managed durable hosted database. A PayPal timeout locks the relevant workflow for manual investigation. The **live sandbox integration cannot be certified until you supply keys and run the full transaction**. Keep an actual deployment's SQLite file on persistent storage. On free hosts with ephemeral disks, data can disappear after restarts.
+The app has no live-payment mode, no independent monitoring source verification, no webhook reconciliation service, no multi-tenant auth, and no managed durable hosted database. A PayPal timeout locks the relevant workflow for manual investigation. The **live sandbox integration cannot be certified until you supply keys and run the full transaction**. Keep an actual deployment's SQLite file on persistent storage. Render merchant mode refuses startup without a mounted persistent disk and an HTTPS public origin. See the deployment instructions below.
 
 ## Hackathon submission
 Include this public repository and MIT license, an operational demo or precise setup steps, an explanatory tool list, and a public YouTube demo shorter than three minutes. Deadline: November 12, 2026, 12 PM PST (November 13, 2026, 1:30 AM IST).
